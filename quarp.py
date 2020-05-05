@@ -31,8 +31,9 @@ class Response:
     # Recieves a cell_value from __init__
     # converts the text to lowercase, standardizes delimiters, removes punctuation
     # Returns washed item as string
-    def wash_item(self, item):
-        # print('Washing: {}'.format(item))
+    def wash_item(self, item, v=False):
+        if v:
+            print('Washing: {}'.format(item))
     
         # lower the item
         item = str(item).lower()
@@ -45,13 +46,16 @@ class Response:
         for p in self.removable_punctuation:
             item = item.replace(p,'')
 
-        # print('Cleaned: {}'.format(item))
+        if v:
+            print('Cleaned: {}'.format(item))
         return item
 
     # Returns the .text value split on standard delimiter, result is a list
     def fragment_self(self):
          return self.text.split(self.standard_delimiter)
 
+    # TODO: Everything. The idea with this is to assign values to certain words either for scoring against other responses or for identifying parents. 
+    # Expands on the reasoning about word counts and parent relationship
     def extract_values_by_word_count(self):
         pass
 
@@ -74,18 +78,18 @@ class Response:
 
 
 
-class cleanAndCluster:
+class QColumn:
     
-    def __init__(self, column, act_clusters={}):
+    def __init__(self, column, act_clusters={}, v=False):
         # Import
         import re
         import numpy as np
         
         # Set up globals
-        self.delimiters = [', ', '\n', ' and ', '. ', '- ', '\\n', '+', ',', '-']
+        self.delimiters = [', ', '\n', ' and ', '. ', '- ', '\\n', '+', ',', '-', ':']
         self.standard_delimiter = ', '
-        self.removable_punctuation = ['.', '!', '/', '*']
-        self.null_words = ['high', 'school', 'played', "I", "a","about","above","after","again","against","ain","all","am","an","and","any","are","aren","aren't","as","at","be","because","been","before","being",
+        self.removable_punctuation = ['.', '!', '/', '*', '(', ')']
+        self.null_words = ['high','nan', 'school','hs', "I", "a","about","above","after","again","against","ain","all","am","an","and","any","are","aren","aren't","as","at","be","because","been","before","being",
                             "below","between","both","but","by","can","couldn","couldn't","d","did","didn","didn't","do","does","doesn","doesn't","doing","don","don't","down","during",
                             "each","few","for","from","further","had","hadn","hadn't","has","hasn","hasn't","have","haven","haven't","having","he","her","here","hers","herself","him",
                             "himself","his","how","i","if","in","into","is","isn","isn't","it","it's","its","itself","just","ll","m","ma","me","mightn","mightn't","more","most","mustn",
@@ -125,6 +129,7 @@ class cleanAndCluster:
                             "concerning","consequently","consider","considering","corresponding","course","currently","definitely","described","despite","entirely","exactly","example","going","greetings",
                             "hello","help","hopefully","ignored","inasmuch","indicate","indicated","indicates","inner","insofar","it'd","keep","keeps","novel","presumably","reasonably","second","secondly",
                             "sensible","serious","seriously","sure","t's","third","thorough","thoroughly","three","well","wonder"]
+        self.valueWords = ['rotc','film','hiking', 'theatre','president', 'lacrosse', 'football', 'club', 'soccer', 'tennis', 'climbing', 'baseball', 'basketball', 'diving', 'nhs', 'engineering', 'track', 'leeds', 'debate', 'hockey', 'spikeball', 'swim', 'deca', 'volleyball', 'spirit', 'golf', 'ski', 'speech', 'cross country', 'skiing', 'waterpolo', 'nhi', 'wrestling', 'rugby', 'water polo', 'swimming', 'skateboarding', 'firefighter', 'letterman', 'fbla', 'work', 'lifeguarding', 'student', 'snowboarding', 'nahs', 'squash', 'tsa', 'yearbook', 'crew', 'boulder freeride', 'band', 'wrestle', 'water', 'biking', 'robotics', 'cross', 'sailing', 'deans leadership fellows', 'america ninja warrior', 'freeride', 'yl', 'martial arts', 'frisbee', 'surf', 'shooting', 'esports']
         self.act_clusters = act_clusters
 
         # Wash
@@ -133,6 +138,8 @@ class cleanAndCluster:
         # Initialize
         self.word_counts = self.gen_total_word_counts(self.column) # This shouldnt be called until after the column has been cleaned. It is producing a lot of ("Club,", "Club ", "club")
         self.responses = self.to_Responses()
+        self.guided_cluster(debug_mode=True, v=v)
+        self.parents_only = self.get_parents_col()
 
     # Recieves self
     # loops through each item in the column and makes a Response object out of it
@@ -154,7 +161,7 @@ class cleanAndCluster:
     # Recieves the column as col
     # for each item in the col, converts the item to lowercase, standardizes delimiters, removes punctuation
     # Returns a washed column as a list
-    def wash_col(self, col):
+    def wash_col(self, col, v=False):
         # Func variables
         standard_delim = self.standard_delimiter
         items_in_col = list(col)
@@ -162,7 +169,8 @@ class cleanAndCluster:
 
         # Iterate over items
         for item in items_in_col:
-            print('Washing: {}'.format(item))
+            if v:
+                print('Washing: {}'.format(item))
 
             # lower the item
             item = str(item).lower()
@@ -175,7 +183,11 @@ class cleanAndCluster:
             for p in self.removable_punctuation:
                 item = item.replace(p,'')
 
-            print('Cleaned: {}'.format(item))
+            item = self.drop_stop_words(item)
+
+            if v:
+                print('Cleaned: {}'.format(item))
+
             washedCol.append(item)
 
 
@@ -224,6 +236,14 @@ class cleanAndCluster:
                 #te = dt.datetime.now().time - s
 
 
+    def get_parents_col(self):
+        parents_col = []
+
+        for r in self.responses:
+            parents_col.append(r.clean_response.strip())
+        
+        return parents_col
+
     # Grabs the list of response objects
     # creates a dict with the counts of occurances of delimited response fragments
     # Returns this dict
@@ -245,7 +265,9 @@ class cleanAndCluster:
         self.fragment_occurances = counts
         return counts
 
-    # Save act clusters to a csv
+
+    # Save act clusters to a csv, optional verbose=False by default
+    # Returns nothing
     def export_clusters(self, filename, v=False):
         with open(filename, 'w', newline="") as csv_file:  
             writer = csv.writer(csv_file)
@@ -257,21 +279,24 @@ class cleanAndCluster:
         else:
             pass
 
+    # TODO: This reads in cluster childeren as a string of a list making it impossible to add to, need a way to read it in as a set
     def import_clusters(self, filename):
         with open(filename) as csv_file:
             reader = csv.reader(csv_file)
             myDict = dict(reader)
+        del myDict['parent']
         return myDict
+
 
     # Recieves a fragment of a response as frag and the parent item in that fragment
     # Checks for the parent's existance and if True it adds fragment to its children, if False it creates the parent and gives it a child of fragment
     # No return, gets called from elsewhere
-    def cluster_frag(self, frag, parent, export=False, outFile='clusters.csv', v=True):
+    def cluster_frag(self, frag, parent, export=False, outFile='clusters.csv', v=False):
 
         if parent in self.act_clusters:# True: the parent already exists, increment it
-            self.act_clusters[parent].append(frag)
+            self.act_clusters[parent].add(frag)
         else: # False: the parent does not exist yet, create it and give it a value of a list with fragment inside
-            self.act_clusters[parent] = [frag]
+            self.act_clusters[parent] = set(frag)
 
         if export:
             self.export_clusters(outFile)
@@ -284,7 +309,7 @@ class cleanAndCluster:
             pass
 
 
-    # Recieves the fragments of a response object, if v is true it will print in verbose mode
+    # Recieves a fragment of a response object, if v is true it will print in verbose mode
     # Makes guesses about which words in a fragment are the parent based on a couple rules
     def guess_keys(self, fragment, v=True):
         findings = []
@@ -293,14 +318,19 @@ class cleanAndCluster:
             self.cluster_frag(fragment, fragment) # cluster it with the word as the parent
             findings.append(fragment)
 
-        # loop through the fragments, for each, check to see if "team" or "varsity" are in it.
+            if v:
+                print('Guessing {} is a parent b/c: Single word fragment'.format(fragment))
 
+        # check to see if "team" or "varsity" are in the fragment
         lfrag = fragment.split(' ')
         if 'varsity' in lfrag: # True: the word varsity is in the frag, the parent is the word after 
             try:
                 presumptive_parent_index = lfrag.index("varsity") + 1 # returns index after the word varsity
                 self.cluster_frag(fragment, lfrag[presumptive_parent_index])
                 findings.append(lfrag[presumptive_parent_index])
+
+                if v:
+                    print('Guessing {} is a parent b/c: Follows "varsity"'.format(lfrag[presumptive_parent_index]))
             except:
                 pass
         elif 'team' in lfrag:
@@ -308,21 +338,22 @@ class cleanAndCluster:
                 presumptive_parent_index = lfrag.index("team") - 1 # returns index before the word team
                 self.cluster_frag(fragment, lfrag[presumptive_parent_index])
                 findings.append(lfrag[presumptive_parent_index])
+
+                if v:
+                    print('Guessing {} is a parent b/c: Follows "team"'.format(lfrag[presumptive_parent_index]))
             except:
                 pass
         else:
             pass
-        
-        if v and len(findings)>0:
-            print('Guessing {} is the parent of {}'.format(findings, fragment))
-        else:
-            # print('guess_keys() found {} parents.'.format(len(findings)))
-            pass
+
         return findings
 
             
     # loop thru each fragment of each response and delegate each one as either a parent or a child of a cluster
-    def manual_cluster(self, valueWords=[], debug_mode=False, export_on_end=True):
+    def guided_cluster(self, valueWords=[], debug_mode=False, export_on_end=True, v=False):
+        if len(valueWords)==0:
+            valueWords = self.valueWords
+
         # Debug stat counters
         manual_classifications = 0
         guess_catches = 0
@@ -330,45 +361,44 @@ class cleanAndCluster:
 
         for response in self.responses: # Will iterate over the list of Response objects
             fragments = response.fragments
-            findings = []
-
+            findings = set()
 
             for frag in fragments:
                 lfrag = frag.split(' ')
 
-                guesses = self.guess_keys(frag)
-                if len(guesses) > 0: # True: guess_keys() was successful and found a parent in the fragment
-                    findings.append(guesses[0])
-                    guess_catches += 1
-                    break
-
                 # This searches for valueWords in each fragment. valueWords lets us specify things to look for that the algorithm might miss
                 for vWord in valueWords:
                     if vWord in lfrag:
-                        self.cluster_frag(frag, vWord)
-                        findings.append(vWord)
-                        break
+                        self.cluster_frag(frag, vWord, v=v)
+                        findings.add(vWord)
+                        # break
                     else:
                         pass
                 
-                # This searches for existing parents in the fragment
+                # This searches for existing parents in the fragment. Parents that have already been clustered 
                 for k in self.act_clusters:
                     if k.split(' ')[0] in lfrag:
-                        self.cluster_frag(frag, k)
-                        findings.append(k)
-                        break
+                        self.cluster_frag(frag, k, v=v)
+                        findings.add(k)
+                        # break
                     else:
                         pass
+
+                guesses = self.guess_keys(frag, v=v)
+                if len(guesses) > 0: # True: guess_keys() was successful and found a parent in the fragment
+                    findings.add(guesses[0])
+                    guess_catches += 1
+                    # break
                 
                 # If we have made it this far, then the fragment doesnt contain an existing parent, or a valueWord and guess_keys() didnt find anything so we should ask for input
                 if len(findings) == 0:
-                    decision = input('Classify: "{}" as parent(enter/return) or as child by specifying a parent'.format(frag))
+                    decision = input('Classify: "{}" \t\t "p" to assign it as its own parent, enter/return to discard fragment, or type a parent to assign it to.'.format(frag))
                     manual_classifications += 1
 
                     if decision == 'p': # True: user classified this fragment as a parent
                         # Options are that the fragment exists as a parent already, doesnt exist and we need to create it
-                        self.cluster_frag(frag, frag)
-                        findings.append(frag)
+                        self.cluster_frag(frag, frag, v=v)
+                        findings.add(frag)
                         # print('{} added to act_clusters as a parent'.format(frag))
                     
                     elif decision == '': # The empty decisino will be used to discard a fragment
@@ -383,14 +413,17 @@ class cleanAndCluster:
                         pass
 
                     else: # True: the user made an input, cluster the frag with the decision as the parent
-                        self.cluster_frag(frag, decision)
-                        findings.append(decision)
+                        self.cluster_frag(frag, decision, v=v)
+                        findings.add(decision)
                         # print('Succesfully added {} as a child of {}'.format(frag, decision))
 
             response.clean_response = " ".join(findings)
+            if v:
+                # print('Found: {}\t\t\tIn: {}'.format(findings, fragments))
+                pass
         
         if export_on_end:
-            self.export_clusters('clusters.csv', v=True)
+            self.export_clusters('clusters.csv', v=v)
         else:
             pass
 
