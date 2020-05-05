@@ -4,18 +4,17 @@
 # Description: Clean and cluster class is a series of methods for analyzing the input of a user faced with an open ended question in the form of a form.
 # The question in question is: 'Clubs, athletics, and activities participated in during high school & college'
 # This question was taken from the Boulder, Colorado IFC On The Hill Rush records.
-
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 import re
 import numpy as np
 import pandas as pd
 import csv
 
-# THe response class should be a class that is applied to every cell in a column, it should have methods for cleaning and a gen counts mthod that takes an external dict of word counts or word values
+# The response class should be a class that is applied to every cell in a column, it should have methods for cleaning and a gen counts mthod that takes an external dict of word counts or word values
 # On __init__, a response should clean itself, with wash_item
 class Response:
 
-    def __init__(self, cell_value):
+    def __init__(self, cell_value, column_wordCounts={}, column_wordValues={}):
         # Globals
         self.delimiters = [', ', '\n', ' and ', '. ', '- ', '\\n', '+']
         self.standard_delimiter = ', '
@@ -23,8 +22,18 @@ class Response:
 
         self.text = self.wash_item(cell_value)
         self.fragments = self.fragment_self()
-        self.fragment_counts = []
-        self.fragment_values = []
+
+        if len(column_wordCounts)!=0:
+            # print('column_wordCounts was passed, assigning with func.')
+            self.fragment_counts = self.assign_fragmented_counts(column_wordCounts)
+        else:
+            self.fragment_counts = []
+
+        if len(column_wordValues)!=0:
+            self.fragment_values = [] # replace with call to assign_fragment_word_values()
+        else:
+            self.fragment_counts = []
+
         self.extracted_acs = []
     
 
@@ -54,6 +63,23 @@ class Response:
     def fragment_self(self):
          return self.text.split(self.standard_delimiter)
 
+
+    def assign_fragmented_counts(self, word_counts):
+        fragmented_counts = []
+        for frag in self.fragments: # for each fragment of the response
+            frag_words = frag.split(' ') # get a list of words
+
+            # now generate counts for the fragment
+            counts = []
+            for word in frag_words:
+                try:
+                    counts.append(word_counts[word])# try to lookup the word in total_word_counts and if found, add the count to the counts array
+                except:
+                    counts.append(0) # if the word cant be found in total_word_counts, append a "0" to the counts array
+            fragmented_counts.append(counts)
+        # fragmented counts looks like [[0, 4, 8, 64, 41], [68], [4, 78]]
+        return fragmented_counts
+
     # TODO: Everything. The idea with this is to assign values to certain words either for scoring against other responses or for identifying parents. 
     # Expands on the reasoning about word counts and parent relationship
     def extract_values_by_word_count(self):
@@ -80,7 +106,7 @@ class Response:
 
 class QColumn:
     
-    def __init__(self, column, act_clusters={}, v=False):
+    def __init__(self, column, act_clusters={}, v=False, valueWords=[], auto=False):
         # Import
         import re
         import numpy as np
@@ -129,7 +155,10 @@ class QColumn:
                             "concerning","consequently","consider","considering","corresponding","course","currently","definitely","described","despite","entirely","exactly","example","going","greetings",
                             "hello","help","hopefully","ignored","inasmuch","indicate","indicated","indicates","inner","insofar","it'd","keep","keeps","novel","presumably","reasonably","second","secondly",
                             "sensible","serious","seriously","sure","t's","third","thorough","thoroughly","three","well","wonder"]
-        self.valueWords = ['rotc','film','hiking', 'theatre','president', 'lacrosse', 'football', 'club', 'soccer', 'tennis', 'climbing', 'baseball', 'basketball', 'diving', 'nhs', 'engineering', 'track', 'leeds', 'debate', 'hockey', 'spikeball', 'swim', 'deca', 'volleyball', 'spirit', 'golf', 'ski', 'speech', 'cross country', 'skiing', 'waterpolo', 'nhi', 'wrestling', 'rugby', 'water polo', 'swimming', 'skateboarding', 'firefighter', 'letterman', 'fbla', 'work', 'lifeguarding', 'student', 'snowboarding', 'nahs', 'squash', 'tsa', 'yearbook', 'crew', 'boulder freeride', 'band', 'wrestle', 'water', 'biking', 'robotics', 'cross', 'sailing', 'deans leadership fellows', 'america ninja warrior', 'freeride', 'yl', 'martial arts', 'frisbee', 'surf', 'shooting', 'esports']
+        if len(valueWords) == 0:
+            self.valueWords = ['rotc','film','hiking', 'theatre','president', 'lacrosse', 'football', 'club', 'soccer', 'tennis', 'climbing', 'baseball', 'basketball', 'diving', 'nhs', 'engineering', 'track', 'leeds', 'debate', 'hockey', 'spikeball', 'swim', 'deca', 'volleyball', 'spirit', 'golf', 'ski', 'speech', 'cross country', 'skiing', 'waterpolo', 'nhi', 'wrestling', 'rugby', 'water polo', 'swimming', 'skateboarding', 'firefighter', 'letterman', 'fbla', 'work', 'lifeguarding', 'student', 'snowboarding', 'nahs', 'squash', 'tsa', 'yearbook', 'crew', 'boulder freeride', 'band', 'wrestle', 'water', 'biking', 'robotics', 'cross', 'sailing', 'deans leadership fellows', 'america ninja warrior', 'freeride', 'yl', 'martial arts', 'frisbee', 'surf', 'shooting', 'esports']
+        else:
+            self.valueWords = valueWords
         self.act_clusters = act_clusters
 
         # Wash
@@ -138,7 +167,12 @@ class QColumn:
         # Initialize
         self.word_counts = self.gen_total_word_counts(self.column) # This shouldnt be called until after the column has been cleaned. It is producing a lot of ("Club,", "Club ", "club")
         self.responses = self.to_Responses()
-        self.guided_cluster(debug_mode=True, v=v)
+        self.gen_fragmented_counts()
+        if auto:
+            self.auto_cluster(debug_mode=True, v=v)
+        else:
+            self.guided_cluster(debug_mode=True, v=v)
+
         self.parents_only = self.get_parents_col()
 
     # Recieves self
@@ -148,7 +182,7 @@ class QColumn:
         responses = []
 
         for item in self.column:
-            R = Response(item) # Creqate a response object of each cell in the column
+            R = Response(item, column_wordCounts=self.word_counts) # Creqate a response object of each cell in the column
             responses.append(R) # append the response object to the list
         
         if len(responses) == len(self.column): # True: all items in column have been converted to Response objects
@@ -433,10 +467,76 @@ class QColumn:
             print('Function Performace\nResponses: {}\nManual Classifications: {}\nGuessed Parents: {}\nDiscarded Fragments: {}\nPercent of parents detected: {}'.format(len(self.responses), manual_classifications, guess_catches, discards, percent_guessed))
         
 
+    def auto_cluster(self, valueWords=[], debug_mode=False, export_on_end=True, v=False):
+        if len(valueWords)==0:
+            valueWords = self.valueWords
+
+        # Debug stat counters
+        missed_classifications = 0
+        guess_catches = 0
+        found_parents = 0
+        found_vWords = 0
+        total_frags = 0
+
+        for response in self.responses: # Will iterate over the list of Response objects
+            fragments = response.fragments
+            findings = set()
+
+            for frag in fragments:
+                total_frags += 1
+                lfrag = frag.split(' ')
+
+                # This searches for existing parents in the fragment. Parents that have already been clustered 
+                for k in self.act_clusters:
+                    if k.split(' ')[0] in lfrag:
+                        self.cluster_frag(frag, k, v=v)
+                        findings.add(k)
+                        found_parents += 1
+                        # break
+                    else:
+                        pass
+
+                # This searches for valueWords in each fragment. valueWords lets us specify things to look for that the algorithm might miss
+                for vWord in valueWords:
+                    if vWord in lfrag:
+                        self.cluster_frag(frag, vWord, v=v)
+                        findings.add(vWord)
+                        found_vWords += 1
+                        # break
+                    else:
+                        pass
+                
+                guesses = self.guess_keys(frag, v=v)
+                if len(guesses) > 0: # True: guess_keys() was successful and found a parent in the fragment
+                    findings.add(guesses[0])
+                    guess_catches += 1
+                    # break
+                
+                # If we have made it this far, then the fragment doesnt contain an existing parent, or a valueWord and guess_keys() didnt find anything. We will chock this one up as an L
+                if len(findings)==0:
+                    missed_classifications += 1
+
+
+            response.clean_response = " ".join(findings)
+            if v:
+                # print('Found: {}\t\t\tIn: {}'.format(findings, fragments))
+                pass
+        
+        if export_on_end:
+            self.export_clusters('clusters.csv', v=v)
+        else:
+            pass
+
+        if debug_mode:
+            success_rate = (total_frags - missed_classifications) / total_frags
+            print('Function Performace\nFragments analyzed: {}\nMissed classifications: {}\nGuessed Parents: {}\nValue Words found: {}\nSuccess Rate: {}'.format(total_frags, missed_classifications, guess_catches, found_vWords, success_rate))
+        
+
+
     # returns total_word_counts  which looks like {word:(times it showed up)}
     # The return value gets assigned to self.word_counts
     def gen_total_word_counts(self, col):
-        print('Generating column word counts')
+        # print('Generating column word counts')
         # get the column as one long string
         total_word_counts = {}
         self.col_as_string = ''
@@ -448,10 +548,10 @@ class QColumn:
 
         # all_items = re.findall('\w+', self.col_as_string) # re: returns a list of all words???? what does this accomplish??
         all_items = self.col_as_string.split(' ')
-        print('Length of all_items: '+str(len(all_items)))
+        # print('Length of all_items: '+str(len(all_items)))
         
         words, counts = np.unique(all_items, return_counts=True)
-        print('Words has {} items'.format(len(words)))
+        # print('Words has {} items'.format(len(words)))
 
         # This loops through the words and counts and turns them into a dictionary 
         for i in range(len(words)):
@@ -761,5 +861,3 @@ class QColumn:
             print('Data Retention: {} \nAvg. Cluster Size: {} \nAvg. ac_total: {}'.format(self.retention, self.avg_cluster_size, self.avg_ac_total))
         except: pass
         #return clusters, sub_ac_total 
-
-# %%
