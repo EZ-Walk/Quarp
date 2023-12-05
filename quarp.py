@@ -16,8 +16,8 @@ class Response:
 
     def __init__(self, cell_value, column_wordCounts={}, column_wordValues={}):
         # Globals
-        self.delimiters = [', ', '\n', ' and ', '. ', '- ', '\\n', '+']
-        self.standard_delimiter = ', '
+        self.delimiters = [', ', '\n', ' and ', '. ', '- ', '\\n', '+', '(', ')']
+        self.standard_delimiter = ','
         self.removable_punctuation = ['.', '!', '/', '*']
 
         self.text = self.wash_item(cell_value)
@@ -40,9 +40,9 @@ class Response:
     # Recieves a cell_value from __init__
     # converts the text to lowercase, standardizes delimiters, removes punctuation
     # Returns washed item as string
-    def wash_item(self, item, v=False):
+    def wash_item(self, item, v=True):
         if v:
-            print('Washing: {}'.format(item))
+            print('Washing: "{}"'.format(item))
     
         # lower the item
         item = str(item).lower()
@@ -56,12 +56,21 @@ class Response:
             item = item.replace(p,'')
 
         if v:
-            print('Cleaned: {}'.format(item))
+            print('Cleaned: "{}"'.format(item))
         return item
 
     # Returns the .text value split on standard delimiter, result is a list
     def fragment_self(self):
-         return self.text.split(self.standard_delimiter)
+        frags = self.text.split(self.standard_delimiter)
+
+        # OPerforma a couple tests to remove empty fragments and space fragments
+        for frag in frags:
+            if len(frag) == 0:
+                frags.remove(frag)
+            if frag == ' ':
+                frags.remove(frag)
+        
+        return frags
 
 
     def assign_fragmented_counts(self, word_counts):
@@ -468,7 +477,7 @@ class QColumn:
         
 
     def auto_cluster(self, valueWords=[], debug_mode=False, export_on_end=True, v=False):
-        if len(valueWords)==0:
+        if len(valueWords)==0: # if we are not given a list of value words, use the one we already know
             valueWords = self.valueWords
 
         # Debug stat counters
@@ -485,14 +494,23 @@ class QColumn:
             for frag in fragments:
                 total_frags += 1
                 lfrag = frag.split(' ')
+                abbr = self.abbreviate_fragment(frag)
+                # add variables of the fragment that include an abbreviated fragment to catch "national honor" society as "nhs"
+                # max_word for the word with the highest value count
+                # golden_word for the word with the highest value
+                # Search for these in cluster parents and value words
 
                 # This searches for existing parents in the fragment. Parents that have already been clustered 
                 for k in self.act_clusters:
-                    if k.split(' ')[0] in lfrag:
+                    if k.split(' ')[0] in lfrag: # checks if the first word in the cluster parent appears in the list fragment
                         self.cluster_frag(frag, k, v=v)
                         findings.add(k)
                         found_parents += 1
                         # break
+                    elif abbr == k: # True: the abbreviation is a parent in clusters
+                        self.cluster_frag(frag, k, v=v)
+                        findings.add(k)
+                        found_parents += 1
                     else:
                         pass
 
@@ -588,7 +606,18 @@ class QColumn:
             # fragmented counts looks like [[0, 4, 8, 64, 41], [68], [4, 78]]
             response.fragmented_counts = fragmented_counts
 
-            
+
+    # The goal of this finction is to make an abbreviation of the fragment so that it can be recognizerd even in it's abrreviated form
+    def abbreviate_fragment(self, fragment):
+        abbr = ''
+        words = fragment.split(' ')
+
+        for w in words:
+            abbr += w[0]
+
+        return abbr
+
+
     # Recieves an identified fragment of a response, that response as a list of words, and counts for those words
     # implements clustering and incrementing of cluster sub_acs as planned
     # Returns the word in the fragment with the highest count
@@ -861,3 +890,5 @@ class QColumn:
             print('Data Retention: {} \nAvg. Cluster Size: {} \nAvg. ac_total: {}'.format(self.retention, self.avg_cluster_size, self.avg_ac_total))
         except: pass
         #return clusters, sub_ac_total 
+
+# %%
